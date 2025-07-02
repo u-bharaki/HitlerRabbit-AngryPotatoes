@@ -1,6 +1,9 @@
 import pygame
 import math
 import random
+import json
+import os
+from enum import Enum
 import time
 
 # Pygame'i başlat
@@ -8,8 +11,8 @@ pygame.init()
 pygame.mixer.init()
 
 # Sabitler
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
+SCREEN_WIDTH = 1200
+SCREEN_HEIGHT = 800
 FPS = 60
 
 # Renkler
@@ -18,671 +21,872 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
-BROWN = (139, 69, 19)
-ORANGE = (255, 165, 0)
 GRAY = (128, 128, 128)
+DARK_GRAY = (64, 64, 64)  
+LIGHT_GRAY = (192, 192, 192)
+ORANGE = (255, 165, 0)
+BROWN = (139, 69, 19)
 DARK_GREEN = (0, 100, 0)
-YELLOW = (255, 255, 0)
-PURPLE = (128, 0, 128)
+LIGHT_GREEN = (144, 238, 144)
+
+class GameState(Enum):
+    MENU = 1
+    GAME = 2
+    PAUSED = 3
+    GAME_OVER = 4
+    LOAD_GAME = 5
 
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Hitler Bıyıklı Tavşan Shooter")
         self.clock = pygame.time.Clock()
-        
-        # Oyun durumu
         self.running = True
-        self.paused = False
-        self.game_over = False
+        self.state = GameState.MENU
+        
+        # Ses ayarları
         self.sound_enabled = True
         self.music_enabled = True
         
-        # Oyuncu
-        self.player = {
-            'x': SCREEN_WIDTH // 2,
-            'y': SCREEN_HEIGHT // 2,
-            'health': 1000,
-            'max_health': 1000,
-            'radius': 30
-        }
+        # Font'lar
+        self.font_large = pygame.font.Font(None, 48)
+        self.font_medium = pygame.font.Font(None, 32)
+        self.font_small = pygame.font.Font(None, 24)
         
-        # Oyun istatistikleri
-        self.killed_potatoes = 0
-        self.level = 1
-        self.level_up_requirement = 10
-        self.game_time = 0
-        self.start_time = time.time()
+        # Oyun değişkenleri
+        self.reset_game()
         
-        # Geliştirmeler
-        self.upgrades = {
-            'speed': {'level': 0, 'cost': 5, 'multiplier': 1.3},
-            'damage': {'level': 0, 'cost': 5, 'multiplier': 1.3},
-            'size': {'level': 0, 'cost': 8, 'multiplier': 1.0},
-            'multi': {'level': 0, 'cost': 15, 'multiplier': 2.0}
-        }
-        
-        # Havuçlar ve patatesler
-        self.carrots = []
-        self.potatoes = []
-        
-        # Spawn zamanlaması
-        self.last_potato_spawn = 0
-        self.potato_spawn_rate = 2000  # millisaniye
-        
-        # Mouse pozisyonu
-        self.mouse_pos = (0, 0)
-        
-        # Ses efektleri (placeholder)
+        # Sesler (placeholder - gerçek ses dosyaları eklenmeli)
+        self.sounds = {}
         try:
-            # Basit ses efektleri oluştur
-            self.create_sound_effects()
-            self.play_background_music()
+            # Ses dosyalarını yükle (yoksa sessiz çalışır)
+            self.load_sounds()
         except:
-            print("Ses sistemi başlatılamadı")
+            print("Ses dosyaları yüklenemedi, oyun sessiz çalışacak")
+        
+        # Müzik
+        self.start_music()
+        
+        # Kayıt dosyası
+        self.save_dir = "saves"
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
     
-    def create_sound_effects(self):
-        """Basit ses efektleri oluştur"""
-        # Placeholder sesler - gerçek ses dosyaları yerine
+    def load_sounds(self):
+        # Gerçek ses dosyaları olsaydı böyle yüklenirdi
+        # self.sounds = {
+        #     'shoot': pygame.mixer.Sound('shoot.wav'),
+        #     'hit': pygame.mixer.Sound('hit.wav'),
+        #     'kill': pygame.mixer.Sound('kill.wav'),
+        #     'levelup': pygame.mixer.Sound('levelup.wav'),
+        #     'upgrade': pygame.mixer.Sound('upgrade.wav'),
+        #     'damage': pygame.mixer.Sound('damage.wav')
+        # }
         pass
     
-    def play_background_music(self):
-        """Arkaplan müziği çal"""
+    def play_sound(self, sound_name):
+        if self.sound_enabled and sound_name in self.sounds:
+            self.sounds[sound_name].play()
+    
+    def start_music(self):
         if self.music_enabled:
             try:
-                # Placeholder müzik
+                # pygame.mixer.music.load('background_music.mp3')
+                # pygame.mixer.music.play(-1)  # Sonsuz döngü
                 pass
             except:
                 pass
     
-    def get_total_power(self):
-        """Toplam gücü hesapla"""
-        total_power = 1.0
-        for upgrade_type, upgrade in self.upgrades.items():
-            if upgrade_type != 'size':  # Size çarpan sağlamaz
-                total_power *= (upgrade['multiplier'] ** upgrade['level'])
-        return total_power
-    
-    def get_carrot_damage(self):
-        """Havuç hasarını hesapla"""
-        base_damage = 40
-        damage_multiplier = self.upgrades['damage']['multiplier'] ** self.upgrades['damage']['level']
-        return int(base_damage * damage_multiplier)
-    
-    def get_carrot_speed(self):
-        """Havuç hızını hesapla"""
-        base_speed = 300
-        speed_multiplier = self.upgrades['speed']['multiplier'] ** self.upgrades['speed']['level']
-        return base_speed * speed_multiplier
-    
-    def get_carrot_size(self):
-        """Havuç boyutunu hesapla"""
-        base_size = 8
-        size_multiplier = 1.2 ** self.upgrades['size']['level']
-        return int(base_size * size_multiplier)
-    
-    def get_carrot_count(self):
-        """Fırlatılacak havuç sayısını hesapla"""
-        return self.upgrades['multi']['level'] + 1
-    
-    def shoot_carrot(self, target_x, target_y):
-        """Havuç fırlat"""
-        if self.paused or self.game_over:
-            return
-            
-        # Yön hesapla
-        dx = target_x - self.player['x']
-        dy = target_y - self.player['y']
-        distance = math.sqrt(dx**2 + dy**2)
+    def reset_game(self):
+        self.player = Player(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+        self.carrots = []
+        self.potatoes = []
+        self.dead_potatoes = []
+        self.game_time = 0
+        self.killed_potatoes = 0
+        self.level = 1
+        self.total_power = 1.0
+        self.potato_spawn_timer = 0
+        self.potato_spawn_delay = 120  # 2 saniye (60 FPS'de)
         
-        if distance > 0:
-            dx /= distance
-            dy /= distance
-            
-            carrot_count = self.get_carrot_count()
-            speed = self.get_carrot_speed()
-            
-            # Çoklu havuç için açı hesapla
-            if carrot_count == 1:
-                angles = [0]
-            else:
-                spread = 0.3  # radyan
-                angles = []
-                for i in range(carrot_count):
-                    angle_offset = (i - (carrot_count - 1) / 2) * spread / (carrot_count - 1)
-                    angles.append(angle_offset)
-            
-            for angle_offset in angles:
-                # Açıyı uygula
-                cos_offset = math.cos(angle_offset)
-                sin_offset = math.sin(angle_offset)
-                
-                new_dx = dx * cos_offset - dy * sin_offset
-                new_dy = dx * sin_offset + dy * cos_offset
-                
-                carrot = {
-                    'x': self.player['x'],
-                    'y': self.player['y'],
-                    'dx': new_dx * speed,
-                    'dy': new_dy * speed,
-                    'damage': self.get_carrot_damage(),
-                    'size': self.get_carrot_size()
-                }
-                self.carrots.append(carrot)
-    
-    def spawn_potato(self):
-        """Patates spawn et"""
-        # Ekranın kenarından rastgele bir nokta seç
-        side = random.choice(['top', 'bottom', 'left', 'right'])
-        
-        if side == 'top':
-            x = random.randint(0, SCREEN_WIDTH)
-            y = -50
-        elif side == 'bottom':
-            x = random.randint(0, SCREEN_WIDTH)
-            y = SCREEN_HEIGHT + 50
-        elif side == 'left':
-            x = -50
-            y = random.randint(0, SCREEN_HEIGHT)
-        else:  # right
-            x = SCREEN_WIDTH + 50
-            y = random.randint(0, SCREEN_HEIGHT)
-        
-        # Patates seviyesine göre can hesapla
-        potato_health = 200 + (self.level - 1) * 50
-        
-        potato = {
-            'x': x,
-            'y': y,
-            'health': potato_health,
-            'max_health': potato_health,
-            'radius': 25,
-            'speed': 50 + self.level * 10,
-            'dead': False,
-            'death_time': 0
+        # Geliştirmeler
+        self.upgrades = {
+            'speed': {'level': 0, 'cost': 5, 'multiplier': 1.3},
+            'power': {'level': 0, 'cost': 8, 'multiplier': 1.3},
+            'count': {'level': 0, 'cost': 15, 'multiplier': 2.0},
+            'size': {'level': 0, 'cost': 3, 'multiplier': 1.0}
         }
-        self.potatoes.append(potato)
+        
+        self.paused = False
+        self.pause_menu_buttons = []
+        self.upgrade_buttons = []
+        self.create_upgrade_buttons()
     
-    def update_carrots(self, dt):
-        """Havuçları güncelle"""
+    def create_upgrade_buttons(self):
+        self.upgrade_buttons = [
+            Button(SCREEN_WIDTH - 250, 50, 100, 30, f"Hız: {self.upgrades['speed']['cost']}", 'speed'),
+            Button(SCREEN_WIDTH - 250, 90, 100, 30, f"Güç: {self.upgrades['power']['cost']}", 'power'),
+            Button(SCREEN_WIDTH - 250, 130, 100, 30, f"Sayı: {self.upgrades['count']['cost']}", 'count'),
+            Button(SCREEN_WIDTH - 250, 170, 100, 30, f"Boyut: {self.upgrades['size']['cost']}", 'size')
+        ]
+    
+    def update_upgrade_buttons(self):
+        self.upgrade_buttons[0].text = f"Hız: {self.upgrades['speed']['cost']}"
+        self.upgrade_buttons[1].text = f"Güç: {self.upgrades['power']['cost']}"
+        self.upgrade_buttons[2].text = f"Sayı: {self.upgrades['count']['cost']}"
+        self.upgrade_buttons[3].text = f"Boyut: {self.upgrades['size']['cost']}"
+    
+    def get_level_requirement(self, level):
+        return int(4 * (1.3 ** (level - 1)))
+    
+    def handle_upgrade(self, upgrade_type):
+        cost = self.upgrades[upgrade_type]['cost']
+        if self.killed_potatoes >= cost:
+            self.killed_potatoes -= cost
+            self.upgrades[upgrade_type]['level'] += 1
+            
+            # Toplam gücü güncelle (boyut hariç)
+            if upgrade_type != 'size':
+                self.total_power *= self.upgrades[upgrade_type]['multiplier']
+            
+            # Maliyeti artır (exponansiyel)
+            self.upgrades[upgrade_type]['cost'] = int(cost * 1.8)
+            
+            self.update_upgrade_buttons()
+            self.play_sound('upgrade')
+    
+    def spawn_potato(self, max_health: int = 5):
+        # Ekranın kenarlarından patates spawn et
+        side = random.randint(0, 3)
+        if side == 0:  # Üst
+            x, y = random.randint(0, SCREEN_WIDTH), -30
+        elif side == 1:  # Sağ
+            x, y = SCREEN_WIDTH + 30, random.randint(0, SCREEN_HEIGHT)
+        elif side == 2:  # Alt
+            x, y = random.randint(0, SCREEN_WIDTH), SCREEN_HEIGHT + 30
+        else:  # Sol
+            x, y = -30, random.randint(0, SCREEN_HEIGHT)
+        
+        # Seviye arttıkça patates hızı artar
+        speed_multiplier = 1 + (self.level - 1) * 0.2
+        self.potatoes.append(Potato(x, y, speed_multiplier, max_health))
+    
+    def update_game(self):
+        if self.paused:
+            return
+        
+        self.game_time += 1/60  # 60 FPS varsayımı
+        
+        # Seviye kontrolü
+        required_kills = self.get_level_requirement(self.level)
+        if self.killed_potatoes >= required_kills:
+            self.level += 1
+            self.play_sound('levelup')
+        
+        # Patates spawn
+        self.potato_spawn_timer += 1
+        spawn_delay = max(5, self.potato_spawn_delay - self.level * 10)  # Seviye arttıkça daha hızlı spawn
+        if self.potato_spawn_timer >= spawn_delay:
+            self.spawn_potato(max(5, self.level / 2))
+            self.potato_spawn_timer = 0
+        
+        # Player güncelle
+        self.player.update()
+        
+        # Havuçları güncelle
         for carrot in self.carrots[:]:
-            carrot['x'] += carrot['dx'] * dt
-            carrot['y'] += carrot['dy'] * dt
-            
-            # Ekran dışına çıkanları kaldır
-            if (carrot['x'] < -100 or carrot['x'] > SCREEN_WIDTH + 100 or
-                carrot['y'] < -100 or carrot['y'] > SCREEN_HEIGHT + 100):
+            carrot.update()
+            if carrot.x < -50 or carrot.x > SCREEN_WIDTH + 50 or carrot.y < -50 or carrot.y > SCREEN_HEIGHT + 50:
                 self.carrots.remove(carrot)
-    
-    def update_potatoes(self, dt):
-        """Patatesleri güncelle"""
-        current_time = pygame.time.get_ticks()
         
+        # Patatesleri güncelle
         for potato in self.potatoes[:]:
-            if potato['dead']:
-                # Ölü patates zamanı
-                if current_time - potato['death_time'] > 2000:  # 2 saniye
-                    self.potatoes.remove(potato)
-                continue
+            potato.update(self.player.x, self.player.y)
             
-            # Oyuncuya doğru hareket et
-            dx = self.player['x'] - potato['x']
-            dy = self.player['y'] - potato['y']
-            distance = math.sqrt(dx**2 + dy**2)
-            
-            if distance > 0:
-                dx /= distance
-                dy /= distance
-                potato['x'] += dx * potato['speed'] * dt
-                potato['y'] += dy * potato['speed'] * dt
-            
-            # Oyuncuyla çarpışma kontrolü
-            player_distance = math.sqrt((potato['x'] - self.player['x'])**2 + 
-                                      (potato['y'] - self.player['y'])**2)
-            if player_distance < potato['radius'] + self.player['radius']:
-                self.player['health'] -= 100
-                potato['dead'] = True
-                potato['death_time'] = current_time
-                
-                if self.player['health'] <= 0:
-                    self.game_over = True
-    
-    def check_collisions(self):
-        """Çarpışmaları kontrol et"""
-        current_time = pygame.time.get_ticks()
+            # Oyuncu ile çarpışma kontrolü
+            if potato.collides_with(self.player):
+                self.player.take_damage(1)
+                self.potatoes.remove(potato)
+                self.play_sound('damage')
+                if self.player.health <= 0:
+                    self.state = GameState.GAME_OVER
         
+        # Havuç-patates çarpışma kontrolü
         for carrot in self.carrots[:]:
             for potato in self.potatoes[:]:
-                if potato['dead']:
-                    continue
-                
-                distance = math.sqrt((carrot['x'] - potato['x'])**2 + 
-                                   (carrot['y'] - potato['y'])**2)
-                
-                if distance < carrot['size'] + potato['radius']:
-                    # Hasar ver
-                    potato['health'] -= carrot['damage']
+                if carrot.collides_with(potato):
+                    damage = carrot.damage
+                    potato.take_damage(damage)
                     
-                    # Patates öldü mü?
-                    if potato['health'] <= 0:
-                        potato['dead'] = True
-                        potato['death_time'] = current_time
+                    if damage >= potato.health + damage:  # Havuç yok olmadan devam eder
+                        pass
+                    else:  # Havuç yok olur
+                        if carrot in self.carrots:
+                            self.carrots.remove(carrot)
+                    
+                    self.play_sound('hit')
+                    
+                    if potato.health <= 0:
+                        self.potatoes.remove(potato)
+                        self.dead_potatoes.append(DeadPotato(potato.x, potato.y))
                         self.killed_potatoes += 1
-                        
-                        # Level kontrolü
-                        if self.killed_potatoes >= self.level_up_requirement:
-                            self.level += 1
-                            self.level_up_requirement = int(self.level_up_requirement * 1.5)
-                    
-                    # Havuç yok olacak mı?
-                    if carrot['damage'] <= potato['max_health']:
-                        self.carrots.remove(carrot)
-                        break
+                        self.play_sound('kill')
+                    break
+        
+        # Ölü patatesleri güncelle
+        for dead_potato in self.dead_potatoes[:]:
+            dead_potato.update()
+            if dead_potato.timer <= 0:
+                self.dead_potatoes.remove(dead_potato)
     
-    def buy_upgrade(self, upgrade_type):
-        """Geliştirme satın al"""
-        upgrade = self.upgrades[upgrade_type]
-        if self.killed_potatoes >= upgrade['cost']:
-            self.killed_potatoes -= upgrade['cost']
-            upgrade['level'] += 1
-            upgrade['cost'] = int(upgrade['cost'] * 1.5)
+    def handle_click(self, pos):
+        if self.state == GameState.GAME and not self.paused:
+            # Upgrade butonları
+            for button in self.upgrade_buttons:
+                if button.rect.collidepoint(pos):
+                    self.handle_upgrade(button.action)
+            # Havuç fırlat
+            count = 1 + self.upgrades['count']['level']
+            for i in range(count):
+                angle_offset = (i - count//2) * 0.2 if count > 1 else 0
+                self.shoot_carrot(pos, angle_offset)
+        elif self.state == GameState.PAUSED:
+            # Pause menü butonları
+            for button in self.pause_menu_buttons:
+                if button.rect.collidepoint(pos):
+                    if button.action == 'resume':
+                        self.paused = False
+                        self.state = GameState.GAME
+                    elif button.action == 'sound':
+                        self.sound_enabled = not self.sound_enabled
+                    elif button.action == 'music':
+                        self.music_enabled = not self.music_enabled
+                        if self.music_enabled:
+                            self.start_music()
+                        else:
+                            pygame.mixer.music.stop()
+                    elif button.action == 'exit':
+                        self.state = GameState.MENU
+        elif self.state == GameState.GAME:
+            # Upgrade butonları
+            for button in self.upgrade_buttons:
+                if button.rect.collidepoint(pos):
+                    self.handle_upgrade(button.action)
     
-    def draw_player(self):
-        """Oyuncuyu çiz"""
-        # Tavşan gövdesi (büyük daire)
-        pygame.draw.circle(self.screen, WHITE, 
-                         (int(self.player['x']), int(self.player['y'])), 
-                         self.player['radius'])
-        pygame.draw.circle(self.screen, BLACK, 
-                         (int(self.player['x']), int(self.player['y'])), 
-                         self.player['radius'], 2)
+    def shoot_carrot(self, target_pos, angle_offset=0):
+        # Oyuncudan hedefe açı hesapla
+        dx = target_pos[0] - self.player.x
+        dy = target_pos[1] - self.player.y
+        angle = math.atan2(dy, dx) + angle_offset
         
-        # Hitler bıyığı
-        mustache_rect = pygame.Rect(self.player['x'] - 10, self.player['y'] - 5, 20, 8)
-        pygame.draw.rect(self.screen, BLACK, mustache_rect)
+        # Geliştirmelere göre havuç özellikleri
+        speed = 8 * (1 + self.upgrades['speed']['level'] * 0.3)
+        damage = 1 + self.upgrades['power']['level']
+        size = 5 + self.upgrades['size']['level'] * 2
         
-        # Kulaklar
-        pygame.draw.ellipse(self.screen, WHITE, 
-                          (self.player['x'] - 35, self.player['y'] - 45, 15, 30))
-        pygame.draw.ellipse(self.screen, WHITE, 
-                          (self.player['x'] + 20, self.player['y'] - 45, 15, 30))
-        
-        # Havuç kollar
-        pygame.draw.ellipse(self.screen, ORANGE, 
-                          (self.player['x'] - 50, self.player['y'] - 10, 20, 8))
-        pygame.draw.ellipse(self.screen, ORANGE, 
-                          (self.player['x'] + 30, self.player['y'] - 10, 20, 8))
-    
-    def draw_arrow(self):
-        """Mouse yönünü gösteren ok çiz"""
-        if self.paused or self.game_over:
-            return
-            
-        dx = self.mouse_pos[0] - self.player['x']
-        dy = self.mouse_pos[1] - self.player['y']
-        angle = math.atan2(dy, dx)
-        
-        # Ok pozisyonu
-        arrow_distance = 50
-        arrow_x = self.player['x'] + math.cos(angle) * arrow_distance
-        arrow_y = self.player['y'] + math.sin(angle) * arrow_distance
-        
-        # Ok çiz
-        arrow_length = 20
-        arrow_end_x = arrow_x + math.cos(angle) * arrow_length
-        arrow_end_y = arrow_y + math.sin(angle) * arrow_length
-        
-        pygame.draw.line(self.screen, RED, (arrow_x, arrow_y), 
-                        (arrow_end_x, arrow_end_y), 3)
-        
-        # Ok başı
-        arrow_head_length = 8
-        arrow_head_angle = 0.5
-        
-        head1_x = arrow_end_x - math.cos(angle - arrow_head_angle) * arrow_head_length
-        head1_y = arrow_end_y - math.sin(angle - arrow_head_angle) * arrow_head_length
-        head2_x = arrow_end_x - math.cos(angle + arrow_head_angle) * arrow_head_length
-        head2_y = arrow_end_y - math.sin(angle + arrow_head_angle) * arrow_head_length
-        
-        pygame.draw.line(self.screen, RED, (arrow_end_x, arrow_end_y), 
-                        (head1_x, head1_y), 3)
-        pygame.draw.line(self.screen, RED, (arrow_end_x, arrow_end_y), 
-                        (head2_x, head2_y), 3)
+        carrot = Carrot(self.player.x, self.player.y, angle, speed, damage, size)
+        self.carrots.append(carrot)
+        self.play_sound('shoot')
     
     def draw_background(self):
-        """Arkaplan çiz"""
-        self.screen.fill(GREEN)
+        # Çimen arkaplanı
+        self.screen.fill(LIGHT_GREEN)
         
-        # Çimen (orta alan)
-        grass_rect = pygame.Rect(200, 150, SCREEN_WIDTH - 400, SCREEN_HEIGHT - 300)
-        pygame.draw.rect(self.screen, DARK_GREEN, grass_rect)
-        
-        # Ağaçlar (placeholder)
-        for i in range(15):
-            tree_x = random.randint(0, SCREEN_WIDTH)
-            tree_y = random.randint(0, SCREEN_HEIGHT)
-            if (tree_x < 200 or tree_x > SCREEN_WIDTH - 200 or 
-                tree_y < 150 or tree_y > SCREEN_HEIGHT - 150):
-                pygame.draw.circle(self.screen, BROWN, (tree_x, tree_y), 15)
-    
-    def draw_carrots(self):
-        """Havuçları çiz"""
-        for carrot in self.carrots:
-            pygame.draw.circle(self.screen, ORANGE, 
-                             (int(carrot['x']), int(carrot['y'])), 
-                             carrot['size'])
-    
-    def draw_potatoes(self):
-        """Patatesleri çiz"""
-        for potato in self.potatoes:
-            if potato['dead']:
-                # Ölü patates
-                pygame.draw.circle(self.screen, GRAY, 
-                                 (int(potato['x']), int(potato['y'])), 
-                                 potato['radius'])
-            else:
-                # Canlı patates
-                pygame.draw.circle(self.screen, BROWN, 
-                                 (int(potato['x']), int(potato['y'])), 
-                                 potato['radius'])
-                
-                # Sinirli yüz
-                eye_size = 3
-                pygame.draw.circle(self.screen, RED, 
-                                 (int(potato['x'] - 8), int(potato['y'] - 8)), eye_size)
-                pygame.draw.circle(self.screen, RED, 
-                                 (int(potato['x'] + 8), int(potato['y'] - 8)), eye_size)
-                
-                # Can barı
-                bar_width = 40
-                bar_height = 6
-                bar_x = potato['x'] - bar_width // 2
-                bar_y = potato['y'] - potato['radius'] - 15
-                
-                # Arkaplan
-                pygame.draw.rect(self.screen, RED, 
-                               (bar_x, bar_y, bar_width, bar_height))
-                
-                # Can
-                health_ratio = potato['health'] / potato['max_health']
-                health_width = int(bar_width * health_ratio)
-                pygame.draw.rect(self.screen, GREEN, 
-                               (bar_x, bar_y, health_width, bar_height))
+        # Ağaç ve çalılar (basit çizim)
+        for i in range(0, SCREEN_WIDTH, 100):
+            for j in range(0, SCREEN_HEIGHT, 100):
+                if (i < 200 or i > SCREEN_WIDTH - 200 or 
+                    j < 150 or j > SCREEN_HEIGHT - 150):
+                    # Ağaç
+                    pygame.draw.circle(self.screen, DARK_GREEN, (i + 50, j + 50), 20)
+                    pygame.draw.rect(self.screen, BROWN, (i + 45, j + 60, 10, 20))
     
     def draw_ui(self):
-        """Kullanıcı arayüzünü çiz"""
-        font = pygame.font.Font(None, 36)
-        small_font = pygame.font.Font(None, 24)
-        
         # Can barı (alt)
-        bar_width = 400
-        bar_height = 30
-        bar_x = (SCREEN_WIDTH - bar_width) // 2
-        bar_y = SCREEN_HEIGHT - 50
+        health_bar_width = 300
+        health_bar_height = 20
+        health_bar_x = (SCREEN_WIDTH - health_bar_width) // 2
+        health_bar_y = SCREEN_HEIGHT - 40
         
-        pygame.draw.rect(self.screen, GRAY, (bar_x, bar_y, bar_width, bar_height))
-        health_ratio = max(0, self.player['health'] / self.player['max_health'])
-        health_width = int(bar_width * health_ratio)
-        pygame.draw.rect(self.screen, RED, (bar_x, bar_y, health_width, bar_height))
+        # Can barı arkaplanı
+        pygame.draw.rect(self.screen, GRAY, 
+                        (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
+        # Can barı
+        health_ratio = self.player.health / self.player.max_health
+        pygame.draw.rect(self.screen, RED, 
+                        (health_bar_x, health_bar_y, health_bar_width * health_ratio, health_bar_height))
         
         # Öldürülen patates sayısı (sol üst)
-        killed_text = font.render(f"Patates: {self.killed_potatoes}", True, BLACK)
-        pygame.draw.circle(self.screen, WHITE, (100, 50), 60)
-        pygame.draw.circle(self.screen, BLACK, (100, 50), 60, 2)
-        text_rect = killed_text.get_rect(center=(100, 50))
-        self.screen.blit(killed_text, text_rect)
+        kills_text = self.font_medium.render(f"🥕 {self.killed_potatoes}", True, BLACK)
+        pygame.draw.ellipse(self.screen, WHITE, (10, 10, 120, 40))
+        pygame.draw.ellipse(self.screen, BLACK, (10, 10, 120, 40), 2)
+        self.screen.blit(kills_text, (20, 20))
         
-        # Geliştirmeler (sağ üst)
-        upgrade_y = 30
-        upgrade_names = ['Hız', 'Güç', 'Boyut', 'Çoklu']
-        upgrade_keys = ['speed', 'damage', 'size', 'multi']
+        # Sağ üst panel
         
-        for i, (name, key) in enumerate(zip(upgrade_names, upgrade_keys)):
-            upgrade = self.upgrades[key]
-            x = SCREEN_WIDTH - 200
-            y = upgrade_y + i * 60
+        panel_x = SCREEN_WIDTH - 300
+        panel_y = 10
+        panel_width = 290
+        panel_height = 250
+        
+        s = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+        s.fill((255, 255, 255, 100))
+        self.screen.blit(s, (panel_x, panel_y))
+        # pygame.draw.rect(self.screen, WHITE, (panel_x, panel_y, panel_width, panel_height))
+        pygame.draw.rect(self.screen, BLACK, (panel_x, panel_y, panel_width, panel_height), 2)
+        
+        # Upgrade butonları
+        for button in self.upgrade_buttons:
+            color = GREEN if self.killed_potatoes >= self.upgrades[button.action]['cost'] else GRAY
+            pygame.draw.rect(self.screen, color, button.rect)
+            pygame.draw.rect(self.screen, BLACK, button.rect, 2)
+            text_surface = self.font_small.render(button.text, True, BLACK)
+            text_rect = text_surface.get_rect(center=button.rect.center)
+            self.screen.blit(text_surface, text_rect)
+        
+        # Oyun bilgileri (sağ üst)
+        info_x = panel_x + 170
+        time_text = self.font_small.render(f"Süre: {int(self.game_time)}s", True, BLACK)
+        level_text = self.font_small.render(f"Seviye: {self.level}", True, BLACK)
+        power_text = self.font_small.render(f"Güç: {self.total_power:.1f}", True, BLACK)
+        
+        self.screen.blit(time_text, (info_x, 50))
+        self.screen.blit(level_text, (info_x, 75))
+        self.screen.blit(power_text, (info_x, 100))
+    
+    def draw_menu(self):
+        self.screen.fill(LIGHT_GREEN)
+        
+        # Başlık
+        title = self.font_large.render("Hitler Bıyıklı Tavşan Shooter", True, BLACK)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH//2, 200))
+        self.screen.blit(title, title_rect)
+        
+        # Menü butonları
+        buttons = [
+            Button(SCREEN_WIDTH//2 - 75, 300, 150, 50, "Start", 'start'),
+            Button(SCREEN_WIDTH//2 - 75, 370, 150, 50, "Load", 'load'),
+            Button(SCREEN_WIDTH//2 - 75, 440, 150, 50, "Exit", 'exit')
+        ]
+        
+        for button in buttons:
+            pygame.draw.rect(self.screen, WHITE, button.rect)
+            pygame.draw.rect(self.screen, BLACK, button.rect, 2)
+            text_surface = self.font_medium.render(button.text, True, BLACK)
+            text_rect = text_surface.get_rect(center=button.rect.center)
+            self.screen.blit(text_surface, text_rect)
             
-            # Buton
-            button_rect = pygame.Rect(x, y, 180, 50)
-            color = GREEN if self.killed_potatoes >= upgrade['cost'] else GRAY
-            pygame.draw.rect(self.screen, color, button_rect)
-            pygame.draw.rect(self.screen, BLACK, button_rect, 2)
-            
-            # Metin
-            text = f"{name} Lv{upgrade['level']}"
-            cost_text = f"Maliyet: {upgrade['cost']}"
-            
-            name_surface = small_font.render(text, True, BLACK)
-            cost_surface = small_font.render(cost_text, True, BLACK)
-            
-            self.screen.blit(name_surface, (x + 5, y + 5))
-            self.screen.blit(cost_surface, (x + 5, y + 25))
-        
-        # Oyun bilgileri (sağ üst, en sağ)
-        info_x = SCREEN_WIDTH - 150
-        info_y = 30
-        
-        time_text = small_font.render(f"Süre: {int(self.game_time)}s", True, BLACK)
-        level_text = small_font.render(f"Level: {self.level}", True, BLACK)
-        power_text = small_font.render(f"Güç: {self.get_total_power():.1f}", True, BLACK)
-        
-        self.screen.blit(time_text, (info_x, info_y))
-        self.screen.blit(level_text, (info_x, info_y + 25))
-        self.screen.blit(power_text, (info_x, info_y + 50))
+            # Buton tıklama kontrolü
+            mouse_pos = pygame.mouse.get_pos()
+            if button.rect.collidepoint(mouse_pos):
+                if pygame.mouse.get_pressed()[0]:
+                    if button.action == 'start':
+                        self.reset_game()
+                        self.state = GameState.GAME
+                    elif button.action == 'load':
+                        self.state = GameState.LOAD_GAME
+                    elif button.action == 'exit':
+                        self.running = False
     
     def draw_pause_menu(self):
-        """Duraklama menüsünü çiz"""
-        # Yarı şeffaf arkaplan
+        # Saydam overlay
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.set_alpha(128)
         overlay.fill(BLACK)
         self.screen.blit(overlay, (0, 0))
         
-        # Menü
-        menu_width = 400
-        menu_height = 300
-        menu_x = (SCREEN_WIDTH - menu_width) // 2
-        menu_y = (SCREEN_HEIGHT - menu_height) // 2
+        # Pause menü paneli
+        panel_width, panel_height = 300, 250
+        panel_x = (SCREEN_WIDTH - panel_width) // 2
+        panel_y = (SCREEN_HEIGHT - panel_height) // 2
         
-        pygame.draw.rect(self.screen, WHITE, (menu_x, menu_y, menu_width, menu_height))
-        pygame.draw.rect(self.screen, BLACK, (menu_x, menu_y, menu_width, menu_height), 3)
+        pygame.draw.rect(self.screen, WHITE, (panel_x, panel_y, panel_width, panel_height))
+        pygame.draw.rect(self.screen, BLACK, (panel_x, panel_y, panel_width, panel_height), 3)
         
-        font = pygame.font.Font(None, 48)
+        # Pause başlığı
+        pause_text = self.font_large.render("PAUSE", True, BLACK)
+        pause_rect = pause_text.get_rect(center=(SCREEN_WIDTH//2, panel_y + 40))
+        self.screen.blit(pause_text, pause_rect)
         
-        # Butonlar
-        button_width = 200
-        button_height = 50
-        button_x = menu_x + (menu_width - button_width) // 2
-        
-        buttons = [
-            ("Devam", menu_y + 50),
-            ("Ses", menu_y + 120),
-            ("Müzik", menu_y + 190),
-            ("Çıkış", menu_y + 260)
+        # Pause menü butonları
+        self.pause_menu_buttons = [
+            Button(panel_x + 50, panel_y + 80, 200, 30, "Devam", 'resume'),
+            Button(panel_x + 50, panel_y + 120, 200, 30, f"Ses: {'Açık' if self.sound_enabled else 'Kapalı'}", 'sound'),
+            Button(panel_x + 50, panel_y + 160, 200, 30, f"Müzik: {'Açık' if self.music_enabled else 'Kapalı'}", 'music'),
+            Button(panel_x + 50, panel_y + 200, 200, 30, "Çıkış", 'exit')
         ]
         
-        for text, y in buttons:
-            button_rect = pygame.Rect(button_x, y - 25, button_width, button_height)
-            pygame.draw.rect(self.screen, GRAY, button_rect)
-            pygame.draw.rect(self.screen, BLACK, button_rect, 2)
-            
-            text_surface = font.render(text, True, BLACK)
-            text_rect = text_surface.get_rect(center=button_rect.center)
+        for button in self.pause_menu_buttons:
+            pygame.draw.rect(self.screen, WHITE, button.rect)
+            pygame.draw.rect(self.screen, BLACK, button.rect, 2)
+            text_surface = self.font_small.render(button.text, True, BLACK)
+            text_rect = text_surface.get_rect(center=button.rect.center)
             self.screen.blit(text_surface, text_rect)
     
     def draw_game_over(self):
-        """Oyun bitti ekranını çiz"""
+        # Saydam overlay
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.set_alpha(200)
+        overlay.set_alpha(128)
         overlay.fill(BLACK)
         self.screen.blit(overlay, (0, 0))
         
-        font = pygame.font.Font(None, 72)
-        info_font = pygame.font.Font(None, 36)
+        # Game over paneli
+        panel_width, panel_height = 400, 350
+        panel_x = (SCREEN_WIDTH - panel_width) // 2
+        panel_y = (SCREEN_HEIGHT - panel_height) // 2
         
-        # Başlık
-        title = font.render("OYUN BİTTİ", True, RED)
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 150))
+        pygame.draw.rect(self.screen, WHITE, (panel_x, panel_y, panel_width, panel_height))
+        pygame.draw.rect(self.screen, BLACK, (panel_x, panel_y, panel_width, panel_height), 3)
+        
+        # Game Over başlığı
+        title = self.font_large.render("GAME OVER", True, RED)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH//2, panel_y + 40))
         self.screen.blit(title, title_rect)
         
         # İstatistikler
         stats = [
-            f"Level: {self.level}",
+            f"Seviye: {self.level}",
+            f"Toplam Güç: {self.total_power:.1f}",
             f"Öldürülen Patates: {self.killed_potatoes}",
-            f"Süre: {int(self.game_time)} saniye",
-            f"Toplam Güç: {self.get_total_power():.1f}",
-            f"Geliştirmeler:",
-            f"  Hız: {self.upgrades['speed']['level']}",
-            f"  Güç: {self.upgrades['damage']['level']}",
-            f"  Boyut: {self.upgrades['size']['level']}",
-            f"  Çoklu: {self.upgrades['multi']['level']}"
+            f"Süre: {int(self.game_time)}s",
+            f"Hız Geliştirmesi: {self.upgrades['speed']['level']}",
+            f"Güç Geliştirmesi: {self.upgrades['power']['level']}",
+            f"Sayı Geliştirmesi: {self.upgrades['count']['level']}",
+            f"Boyut Geliştirmesi: {self.upgrades['size']['level']}"
         ]
         
-        y = 250
+        y_offset = 80
         for stat in stats:
-            text = info_font.render(stat, True, WHITE)
-            text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, y))
-            self.screen.blit(text, text_rect)
-            y += 35
+            stat_text = self.font_small.render(stat, True, BLACK)
+            self.screen.blit(stat_text, (panel_x + 20, panel_y + y_offset))
+            y_offset += 25
         
         # Butonlar
-        button_width = 200
-        button_height = 50
+        restart_button = Button(panel_x + 50, panel_y + 280, 120, 40, "Tekrar Oyna", 'restart')
+        exit_button = Button(panel_x + 230, panel_y + 280, 120, 40, "Çıkış", 'exit')
         
-        restart_rect = pygame.Rect(SCREEN_WIDTH // 2 - 220, 580, button_width, button_height)
-        quit_rect = pygame.Rect(SCREEN_WIDTH // 2 + 20, 580, button_width, button_height)
-        
-        pygame.draw.rect(self.screen, GREEN, restart_rect)
-        pygame.draw.rect(self.screen, RED, quit_rect)
-        pygame.draw.rect(self.screen, BLACK, restart_rect, 2)
-        pygame.draw.rect(self.screen, BLACK, quit_rect, 2)
-        
-        restart_text = info_font.render("Tekrar Oyna", True, BLACK)
-        quit_text = info_font.render("Çıkış", True, BLACK)
-        
-        restart_text_rect = restart_text.get_rect(center=restart_rect.center)
-        quit_text_rect = quit_text.get_rect(center=quit_rect.center)
-        
-        self.screen.blit(restart_text, restart_text_rect)
-        self.screen.blit(quit_text, quit_text_rect)
-    
-    def handle_events(self):
-        """Olayları işle"""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
+        for button in [restart_button, exit_button]:
+            pygame.draw.rect(self.screen, WHITE, button.rect)
+            pygame.draw.rect(self.screen, BLACK, button.rect, 2)
+            text_surface = self.font_small.render(button.text, True, BLACK)
+            text_rect = text_surface.get_rect(center=button.rect.center)
+            self.screen.blit(text_surface, text_rect)
             
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE and not self.game_over:
-                    self.paused = not self.paused
+            # Buton tıklama kontrolü
+            mouse_pos = pygame.mouse.get_pos()
+            if button.rect.collidepoint(mouse_pos):
+                if pygame.mouse.get_pressed()[0]:
+                    if button.action == 'restart':
+                        self.reset_game()
+                        self.state = GameState.GAME
+                    elif button.action == 'exit':
+                        self.state = GameState.MENU
+    
+    def draw_load_menu(self):
+        self.screen.fill(LIGHT_GREEN)
+        
+        # Başlık
+        title = self.font_large.render("Kayıt Dosyaları", True, BLACK)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH//2, 100))
+        self.screen.blit(title, title_rect)
+        
+        # Kayıt dosyalarını listele
+        save_files = []
+        if os.path.exists(self.save_dir):
+            save_files = [f for f in os.listdir(self.save_dir) if f.endswith('.json')]
+        
+        y_offset = 200
+        for i, save_file in enumerate(save_files[:5]):  # En fazla 5 kayıt göster
+            button = Button(SCREEN_WIDTH//2 - 150, y_offset, 300, 40, save_file[:-5], f'load_{i}')
+            pygame.draw.rect(self.screen, WHITE, button.rect)
+            pygame.draw.rect(self.screen, BLACK, button.rect, 2)
+            text_surface = self.font_medium.render(button.text, True, BLACK)
+            text_rect = text_surface.get_rect(center=button.rect.center)
+            self.screen.blit(text_surface, text_rect)
             
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Sol tık
-                    if self.game_over:
-                        # Oyun bitti ekranında buton kontrolü
-                        mouse_x, mouse_y = event.pos
-                        restart_rect = pygame.Rect(SCREEN_WIDTH // 2 - 220, 580, 200, 50)
-                        quit_rect = pygame.Rect(SCREEN_WIDTH // 2 + 20, 580, 200, 50)
-                        
-                        if restart_rect.collidepoint(mouse_x, mouse_y):
-                            self.restart_game()
-                        elif quit_rect.collidepoint(mouse_x, mouse_y):
-                            self.running = False
-                    
-                    elif self.paused:
-                        # Pause menüsünde buton kontrolü
-                        mouse_x, mouse_y = event.pos
-                        menu_x = (SCREEN_WIDTH - 400) // 2
-                        button_x = menu_x + 100
-                        
-                        buttons = [
-                            (button_x, 325, "continue"),  # Devam
-                            (button_x, 395, "sound"),     # Ses
-                            (button_x, 465, "music"),     # Müzik
-                            (button_x, 535, "quit")       # Çıkış
-                        ]
-                        
-                        for bx, by, action in buttons:
-                            if (bx <= mouse_x <= bx + 200 and 
-                                by - 25 <= mouse_y <= by + 25):
-                                if action == "continue":
-                                    self.paused = False
-                                elif action == "sound":
-                                    self.sound_enabled = not self.sound_enabled
-                                elif action == "music":
-                                    self.music_enabled = not self.music_enabled
-                                elif action == "quit":
-                                    self.running = False
-                    
-                    elif not self.paused:
-                        # Geliştirme butonları kontrolü
-                        mouse_x, mouse_y = event.pos
-                        upgrade_keys = ['speed', 'damage', 'size', 'multi']
-                        
-                        for i, key in enumerate(upgrade_keys):
-                            button_rect = pygame.Rect(SCREEN_WIDTH - 200, 30 + i * 60, 180, 50)
-                            if button_rect.collidepoint(mouse_x, mouse_y):
-                                self.buy_upgrade(key)
-                                break
-                        else:
-                            # Havuç fırlat
-                            self.shoot_carrot(mouse_x, mouse_y)
+            # Buton tıklama kontrolü
+            mouse_pos = pygame.mouse.get_pos()
+            if button.rect.collidepoint(mouse_pos):
+                if pygame.mouse.get_pressed()[0]:
+                    self.load_game(save_file)
+                    self.state = GameState.GAME
             
-            elif event.type == pygame.MOUSEMOTION:
-                self.mouse_pos = event.pos
+            y_offset += 60
+        
+        # Geri dön butonu
+        back_button = Button(50, 50, 100, 40, "Geri", 'back')
+        pygame.draw.rect(self.screen, WHITE, back_button.rect)
+        pygame.draw.rect(self.screen, BLACK, back_button.rect, 2)
+        text_surface = self.font_medium.render(back_button.text, True, BLACK)
+        text_rect = text_surface.get_rect(center=back_button.rect.center)
+        self.screen.blit(text_surface, text_rect)
+        
+        mouse_pos = pygame.mouse.get_pos()
+        if back_button.rect.collidepoint(mouse_pos):
+            if pygame.mouse.get_pressed()[0]:
+                self.state = GameState.MENU
     
-    def restart_game(self):
-        """Oyunu yeniden başlat"""
-        self.__init__()
+    def save_game(self):
+        save_data = {
+            'player_health': self.player.health,
+            'game_time': self.game_time,
+            'killed_potatoes': self.killed_potatoes,
+            'level': self.level,
+            'total_power': self.total_power,
+            'upgrades': self.upgrades
+        }
+        
+        timestamp = int(time.time())
+        filename = f"save_{timestamp}.json"
+        filepath = os.path.join(self.save_dir, filename)
+        
+        with open(filepath, 'w') as f:
+            json.dump(save_data, f)
     
-    def update(self, dt):
-        """Oyunu güncelle"""
-        if self.paused or self.game_over:
-            return
-        
-        # Oyun zamanını güncelle
-        self.game_time = time.time() - self.start_time
-        
-        # Patates spawn
-        current_time = pygame.time.get_ticks()
-        spawn_rate = max(500, self.potato_spawn_rate - self.level * 100)
-        
-        if current_time - self.last_potato_spawn > spawn_rate:
-            self.spawn_potato()
-            self.last_potato_spawn = current_time
-        
-        # Nesneleri güncelle
-        self.update_carrots(dt)
-        self.update_potatoes(dt)
-        self.check_collisions()
+    def load_game(self, filename):
+        filepath = os.path.join(self.save_dir, filename)
+        try:
+            with open(filepath, 'r') as f:
+                save_data = json.load(f)
+            
+            self.reset_game()
+            self.player.health = save_data['player_health']
+            self.game_time = save_data['game_time']
+            self.killed_potatoes = save_data['killed_potatoes']
+            self.level = save_data['level']
+            self.total_power = save_data['total_power']
+            self.upgrades = save_data['upgrades']
+            self.update_upgrade_buttons()
+        except Exception as e:
+            print(f"Kayıt yüklenemedi: {e}")
     
-    def draw(self):
-        """Oyunu çiz"""
+    def draw_game_elements(self):
+        # Arkaplanı çiz
         self.draw_background()
-        self.draw_player()
-        self.draw_arrow()
-        self.draw_carrots()
-        self.draw_potatoes()
-        self.draw_ui()
         
-        if self.paused:
-            self.draw_pause_menu()
-        elif self.game_over:
-            self.draw_game_over()
+        # Ölü patatesleri çiz
+        for dead_potato in self.dead_potatoes:
+            dead_potato.draw(self.screen)
+        
+        # Oyuncuyu çiz
+        self.player.draw(self.screen)
+        
+        # Mouse takip okunu çiz
+        mouse_pos = pygame.mouse.get_pos()
+        if not self.paused:
+            self.player.draw_aim_arrow(self.screen, mouse_pos)
+        
+        # Havuçları çiz
+        for carrot in self.carrots:
+            carrot.draw(self.screen)
+        
+        # Patatesleri çiz
+        for potato in self.potatoes:
+            potato.draw(self.screen)
+        
+        # UI'ı çiz
+        self.draw_ui()
     
     def run(self):
-        """Ana oyun döngüsü"""
         while self.running:
-            dt = self.clock.tick(FPS) / 1000.0  # Delta time in seconds
+            # Event handling
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if self.state == GameState.GAME:
+                            self.paused = not self.paused
+                            self.state = GameState.PAUSED if self.paused else GameState.GAME
+                        elif self.state == GameState.PAUSED:
+                            self.paused = False
+                            self.state = GameState.GAME
+                    elif event.key == pygame.K_s and pygame.key.get_pressed()[pygame.K_LCTRL]:
+                        if self.state == GameState.GAME:
+                            self.save_game()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Sol tık
+                        self.handle_click(event.pos)
             
-            self.handle_events()
-            self.update(dt)
-            self.draw()
+            # Update
+            if self.state == GameState.GAME:
+                self.update_game()
+            
+            # Draw
+            if self.state == GameState.MENU:
+                self.draw_menu()
+            elif self.state == GameState.LOAD_GAME:
+                self.draw_load_menu()
+            elif self.state == GameState.PAUSED:
+                self.draw_game_elements()
+                self.draw_pause_menu()
+            elif self.state == GameState.GAME_OVER:
+                self.draw_game_elements()
+                self.draw_game_over()
+            else:  # GameState.GAME
+                self.draw_game_elements()
             
             pygame.display.flip()
+            self.clock.tick(FPS)
         
         pygame.quit()
 
+class Player:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.max_health = 100
+        self.health = self.max_health
+        self.size = 25
+    
+    def update(self):
+        pass
+    
+    def take_damage(self, damage):
+        self.health -= damage
+        if self.health < 0:
+            self.health = 0
+    
+    def draw(self, screen):
+        # Tavşan vücudu (büyük kafa)
+        pygame.draw.circle(screen, WHITE, (int(self.x), int(self.y - 5)), self.size)
+        pygame.draw.circle(screen, BLACK, (int(self.x), int(self.y - 5)), self.size, 2)
+        
+        # Hitler bıyığı
+        pygame.draw.rect(screen, BLACK, (self.x - 8, self.y - 3, 16, 4))
+        
+        # Gözler
+        pygame.draw.circle(screen, BLACK, (int(self.x - 8), int(self.y - 10)), 3)
+        pygame.draw.circle(screen, BLACK, (int(self.x + 8), int(self.y - 10)), 3)
+        
+        # Tavşan kulakları
+        pygame.draw.ellipse(screen, WHITE, (self.x - 15, self.y - 35, 8, 20))
+        pygame.draw.ellipse(screen, WHITE, (self.x + 7, self.y - 35, 8, 20))
+        pygame.draw.ellipse(screen, BLACK, (self.x - 15, self.y - 35, 8, 20), 2)
+        pygame.draw.ellipse(screen, BLACK, (self.x + 7, self.y - 35, 8, 20), 2)
+        
+        # Havuç kollar
+        # Sol kol
+        pygame.draw.polygon(screen, ORANGE, [
+            (self.x - 25, self.y + 5),
+            (self.x - 35, self.y - 5),
+            (self.x - 32, self.y - 8),
+            (self.x - 22, self.y + 2)
+        ])
+        # Sağ kol
+        pygame.draw.polygon(screen, ORANGE, [
+            (self.x + 25, self.y + 5),
+            (self.x + 35, self.y - 5),
+            (self.x + 32, self.y - 8),
+            (self.x + 22, self.y + 2)
+        ])
+        
+        # Vücut
+        pygame.draw.ellipse(screen, WHITE, (self.x - 15, self.y + 10, 30, 25))
+        pygame.draw.ellipse(screen, BLACK, (self.x - 15, self.y + 10, 30, 25), 2)
+    
+    def draw_aim_arrow(self, screen, mouse_pos):
+        # Mouse'a doğru ok çiz
+        dx = mouse_pos[0] - self.x
+        dy = mouse_pos[1] - self.y
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        if distance > 0:
+            # Normalize et
+            dx /= distance
+            dy /= distance
+            
+            # Ok başlangıç noktası (oyuncunun kenarı)
+            arrow_start_x = self.x + dx * (self.size + 10)
+            arrow_start_y = self.y + dy * (self.size + 10)
+            
+            # Ok ucu
+            arrow_end_x = arrow_start_x + dx * 30
+            arrow_end_y = arrow_start_y + dy * 30
+            
+            # Ok çizgisi
+            pygame.draw.line(screen, RED, 
+                           (arrow_start_x, arrow_start_y), 
+                           (arrow_end_x, arrow_end_y), 3)
+            
+            # Ok başı
+            angle = math.atan2(dy, dx)
+            arrow_head_size = 8
+            
+            # Ok başının noktaları
+            head_point1_x = arrow_end_x - arrow_head_size * math.cos(angle - 0.5)
+            head_point1_y = arrow_end_y - arrow_head_size * math.sin(angle - 0.5)
+            
+            head_point2_x = arrow_end_x - arrow_head_size * math.cos(angle + 0.5)
+            head_point2_y = arrow_end_y - arrow_head_size * math.sin(angle + 0.5)
+            
+            pygame.draw.polygon(screen, RED, [
+                (arrow_end_x, arrow_end_y),
+                (head_point1_x, head_point1_y),
+                (head_point2_x, head_point2_y)
+            ])
+    
+    def collides_with(self, other):
+        dx = self.x - other.x
+        dy = self.y - other.y
+        distance = math.sqrt(dx*dx + dy*dy)
+        return distance < (self.size + other.size)
+
+class Carrot:
+    def __init__(self, x, y, angle, speed, damage, size):
+        self.x = x
+        self.y = y
+        self.angle = angle
+        self.speed = speed
+        self.damage = damage
+        self.size = size
+        self.vx = math.cos(angle) * speed
+        self.vy = math.sin(angle) * speed
+    
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+    
+    def draw(self, screen):
+        # Havuç şekli çiz
+        points = []
+        for i in range(6):
+            angle = i * math.pi / 3 + self.angle
+            if i % 2 == 0:
+                radius = self.size
+            else:
+                radius = self.size * 0.7
+            
+            px = self.x + math.cos(angle) * radius
+            py = self.y + math.sin(angle) * radius
+            points.append((px, py))
+        
+        pygame.draw.polygon(screen, ORANGE, points)
+        pygame.draw.polygon(screen, BLACK, points, 2)
+        
+        # Havuç yaprağı
+        leaf_x = self.x - math.cos(self.angle) * self.size
+        leaf_y = self.y - math.sin(self.angle) * self.size
+        pygame.draw.circle(screen, GREEN, (int(leaf_x), int(leaf_y)), self.size // 3)
+    
+    def collides_with(self, other):
+        dx = self.x - other.x
+        dy = self.y - other.y
+        distance = math.sqrt(dx*dx + dy*dy)
+        return distance < (self.size + other.size)
+
+class Potato:
+    def __init__(self, x, y, speed_multiplier=1.0, max_health: int = 5):
+        self.x = x
+        self.y = y
+        self.max_health = max_health
+        self.health = self.max_health
+        self.size = 20
+        self.speed = 1.5 * speed_multiplier
+        self.anger_level = random.uniform(0, math.pi * 2)  # Sinirli animasyon için
+    
+    def update(self, target_x, target_y):
+        # Oyuncuya doğru hareket et
+        dx = target_x - self.x
+        dy = target_y - self.y
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        if distance > 0:
+            self.x += (dx / distance) * self.speed
+            self.y += (dy / distance) * self.speed
+        
+        self.anger_level += 0.2  # Animasyon için
+    
+    def take_damage(self, damage):
+        self.health -= damage
+    
+    def draw(self, screen):
+        # Sinirli patates animasyonu
+        shake_x = math.sin(self.anger_level) * 2
+        shake_y = math.cos(self.anger_level * 1.3) * 2
+        
+        draw_x = int(self.x + shake_x)
+        draw_y = int(self.y + shake_y)
+        
+        # Patates vücudu
+        pygame.draw.ellipse(screen, (139, 69, 19), 
+                          (draw_x - self.size, draw_y - self.size//2, 
+                           self.size*2, self.size))
+        pygame.draw.ellipse(screen, BLACK, 
+                          (draw_x - self.size, draw_y - self.size//2, 
+                           self.size*2, self.size), 2)
+        
+        # Sinirli gözler
+        eye_color = RED if self.anger_level % (math.pi) < math.pi/2 else (255, 100, 100)
+        pygame.draw.circle(screen, eye_color, (draw_x - 8, draw_y - 5), 4)
+        pygame.draw.circle(screen, eye_color, (draw_x + 8, draw_y - 5), 4)
+        
+        # Kaşlar (sinirli)
+        pygame.draw.line(screen, BLACK, (draw_x - 12, draw_y - 12), (draw_x - 4, draw_y - 8), 3)
+        pygame.draw.line(screen, BLACK, (draw_x + 4, draw_y - 8), (draw_x + 12, draw_y - 12), 3)
+        
+        # Ağız (sinirli)
+        pygame.draw.arc(screen, BLACK, (draw_x - 8, draw_y + 2, 16, 10), 0, math.pi, 3)
+        
+        # Can barı
+        if self.health < self.max_health:
+            bar_width = 30
+            bar_height = 4
+            bar_x = draw_x - bar_width // 2
+            bar_y = draw_y - self.size - 10
+            
+            # Can barı arkaplanı
+            pygame.draw.rect(screen, GRAY, (bar_x, bar_y, bar_width, bar_height))
+            
+            # Can barı
+            health_ratio = self.health / self.max_health
+            pygame.draw.rect(screen, RED, (bar_x, bar_y, bar_width * health_ratio, bar_height))
+    
+    def collides_with(self, other):
+        dx = self.x - other.x
+        dy = self.y - other.y
+        distance = math.sqrt(dx*dx + dy*dy)
+        return distance < (self.size + other.size)
+
+class DeadPotato:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.timer = 180  # 3 saniye (60 FPS'de)
+        self.size = 20
+    
+    def update(self):
+        self.timer -= 1
+    
+    def draw(self, screen):
+        # Ölü patates (solgun)
+        alpha = max(0, min(255, self.timer * 2))  # Yavaşça kaybol
+        
+        # Geçici surface oluştur alpha için
+        temp_surface = pygame.Surface((self.size * 2, self.size))
+        temp_surface.set_alpha(alpha)
+        temp_surface.fill((100, 50, 25))  # Solgun kahverengi
+        
+        screen.blit(temp_surface, (self.x - self.size, self.y - self.size//2))
+        
+        # X gözler
+        if alpha > 100:
+            pygame.draw.line(screen, BLACK, 
+                           (self.x - 10, self.y - 8), (self.x - 6, self.y - 4), 2)
+            pygame.draw.line(screen, BLACK, 
+                           (self.x - 6, self.y - 8), (self.x - 10, self.y - 4), 2)
+            pygame.draw.line(screen, BLACK, 
+                           (self.x + 6, self.y - 8), (self.x + 10, self.y - 4), 2)
+            pygame.draw.line(screen, BLACK, 
+                           (self.x + 10, self.y - 8), (self.x + 6, self.y - 4), 2)
+
+class Button:
+    def __init__(self, x, y, width, height, text, action):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.action = action
+
+# Oyunu başlat
 if __name__ == "__main__":
     game = Game()
     game.run()
